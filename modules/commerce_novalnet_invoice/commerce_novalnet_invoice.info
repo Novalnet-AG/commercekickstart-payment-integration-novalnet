@@ -1,0 +1,7 @@
+name = Invoice
+description = Invoice payment method.
+package = Commerce - Novalnet
+dependencies[] = commerce_novalnet
+
+core = 7.x
+version = "7.x-11.1.2"

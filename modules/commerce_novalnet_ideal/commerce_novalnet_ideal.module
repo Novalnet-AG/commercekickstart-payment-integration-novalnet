@@ -1,0 +1,133 @@
+<?php
+/**
+ * @file
+ * Novalnet payment method module
+ * This module is used for real time processing of
+ * Novalnet transaction of customers.
+ *
+ * @category   PHP
+ * @package    commerce_novalnet
+ * @author     Novalnet AG
+ * @copyright  Copyright by Novalnet
+ * @license    https://www.novalnet.com/payment-plugins/free/license
+ * @version    11.1.2
+ *
+ *  Script : commerce_novalnet_ideal.module
+ *
+ */
+
+/**
+ * Novalnet key for iDeal Payment
+ */
+  define('COMMERCE_NOVALNET_IDEAL_KEY', 49);
+  define('COMMERCE_NOVALNET_IDEAL', 'IDEAL');
+  define('COMMERCE_NOVALNET_IDEAL_URL', 'https://payport.novalnet.de/online_transfer_payport');
+
+/**
+ * Implements hook_commerce_payment_method_info().
+ */
+function commerce_novalnet_ideal_commerce_payment_method_info() {
+  $payment_methods = array();
+  $global_setting   = commerce_novalnet_validate_basic_data('commerce_novalnet_ideal');
+  $payment_settings = rules_config_load('commerce_payment_commerce_novalnet_ideal');
+
+  if (!empty($global_setting) && !empty($payment_settings)) {
+    //Load payment settings
+    $payment_settings = commerce_payment_method_instance_load('commerce_novalnet_ideal|commerce_payment_commerce_novalnet_ideal');
+    $payment_settings = empty($payment_settings['settings']) ? array() : $payment_settings['settings'];
+  }
+
+  if ( (empty($global_setting) || empty($payment_settings)) && arg(0) != 'admin')
+    return $payment_methods;
+
+  $payment_methods['commerce_novalnet_ideal'] = array(
+    'title'                 => t('iDEAL'),
+    'display_title'         => empty($global_setting['nn_logo']) ? t('iDEAL') :commerce_novalnet_payment_display_title(t('iDEAL'), 'commerce_novalnet_ideal'),
+    'description'           => t('iDEAL payment via Novalnet.'),
+    'active'                => FALSE,
+    'terminal'              => FALSE,
+    'offsite'               => TRUE,
+    'offsite_autoredirect'  => TRUE
+  );
+
+  return $payment_methods;
+}
+
+/**
+ * Implements callback for payment setting.
+ * @param array $settings
+ * @return array
+ */
+function commerce_novalnet_ideal_settings_form($settings = array()) {
+  $form = array();
+  commerce_novalnet_payment_common_settings($form, $settings); //  Calling common function for get common settings
+  return $form;
+}
+
+/**
+ * Payment method callback: submit form.
+ * @param array $payment_method
+ * @param array $pane_values
+ * @param array $checkout_pane
+ * @param object $order
+ * @return array
+ */
+function commerce_novalnet_ideal_submit_form($payment_method, $pane_values, $checkout_pane, $order) {
+  $form['nn_ideal_markup'] = array(
+    '#type'   => 'markup',
+    '#markup' => t('After the successful verification, you will be redirected to Novalnet secure order page to proceed with the payment') . '<br>' . t('Please don’t close the browser after successful payment, until you have been redirected back to the Shop') . commerce_novalnet_test_payment_info($payment_method['settings']),
+  );
+  return $form;
+}
+
+/**
+ * Payment method callback: submit form submission.
+ * @param array $payment_method
+ * @param array $pane_form
+ * @param array $pane_values
+ * @param object $order
+ * @param array $charge
+ * @return bool
+ */
+function commerce_novalnet_ideal_submit_form_submit($payment_method, $pane_form, $pane_values, $order, $charge) {
+  return TRUE;
+}
+
+/**
+ * Payment method callback: redirect form
+ * @param array $form
+ * @param array $form_state
+ * @param object $order
+ * @param array $payment_method
+ * @return array $form
+ */
+function commerce_novalnet_ideal_redirect_form($form, &$form_state, $order, $payment_method) {
+  $data = array();
+  $payment_method['global_setting'] = commerce_novalnet_validate_basic_data('commerce_novalnet_ideal');
+  commerce_novalnet_get_common_params($data, $payment_method, $order);
+  commerce_novalnet_redirect_params($data, $order);
+  commerce_novalnet_encode_params($data);
+  foreach($data as $key => $val){
+    $form[$key] = array(
+      '#type'             => 'hidden',
+      '#default_value'    => $val
+    );
+  }
+  $form['#action'] = COMMERCE_NOVALNET_IDEAL_URL;
+  $form['submit'] = array(
+    '#type'     => 'submit',
+    '#value'    => t('Confirm'),
+  );
+  return $form;
+}
+
+/**
+ * Payment method callback: redirect form validate
+ * @param object $order
+ * @param array $payment_method
+ * @return bool
+ */
+function commerce_novalnet_ideal_redirect_form_validate($order, $payment_method) {
+  $response = $_REQUEST;
+  return commerce_novalnet_redirect_process($response, $order, $payment_method); // Call this function to do re-direction payment process
+}

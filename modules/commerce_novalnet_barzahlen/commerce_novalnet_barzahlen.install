@@ -1,0 +1,28 @@
+<?php
+/**
+ * @file
+ * Novalnet payment method module
+ * This module is used for real time processing of
+ * Novalnet transaction of customers.
+ *
+ * @category   PHP
+ * @package    commerce_novalnet
+ * @author     Novalnet AG
+ * @copyright  Copyright by Novalnet
+ * @license    https://www.novalnet.com/payment-plugins/free/license
+ * @version    11.1.2
+ *
+ *  Script : commerce_novalnet_barzahlen.install
+ *
+ */
+
+/**
+ * Implements hook_uninstall().
+ */
+function commerce_novalnet_barzahlen_uninstall() {
+  // Uninstall rules configuration.
+  $payment = rules_config_load('commerce_payment_commerce_novalnet_barzahlen');
+  if ($payment) {
+    rules_config_delete(array($payment->id));
+  }
+}

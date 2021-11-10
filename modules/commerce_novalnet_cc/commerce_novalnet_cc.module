@@ -1,0 +1,197 @@
+<?php
+/**
+ * @file
+ * Novalnet payment method module
+ * This module is used for real time processing of
+ * Novalnet transaction of customers.
+ *
+ * @category   PHP
+ * @package    commerce_novalnet
+ * @author     Novalnet AG
+ * @copyright  Copyright by Novalnet
+ * @license    https://www.novalnet.com/payment-plugins/free/license
+ * @version    11.1.2
+ *
+ *  Script : commerce_novalnet_cc.module
+ *
+ */
+
+/**
+ * include commerce_novalnet_cc.inc file
+ */
+  module_load_include('inc', 'commerce_novalnet_cc', 'commerce_novalnet_cc');
+
+/**
+ * Novalnet key & pay-gate URLs for Credit Card Payment
+ */
+  define('COMMERCE_NOVALNET_CC_KEY', 6);
+  define('COMMERCE_NOVALNET_CC_PCI_PORT', 'https://payport.novalnet.de/pci_payport');
+  define('COMMERCE_NOVALNET_CC', 'CREDITCARD');
+  define('COMMERCE_NOVALNET_CC_IFRAME_URL', 'https://secure.novalnet.de/cc');
+
+/**
+ * Implements hook_commerce_payment_method_info().
+ */
+function commerce_novalnet_cc_commerce_payment_method_info() {
+  $payment_methods = array();
+
+  $global_setting   = commerce_novalnet_validate_basic_data('commerce_novalnet_cc');
+  $payment_settings = rules_config_load('commerce_payment_commerce_novalnet_cc');
+
+  if (!empty($global_setting) && !empty($payment_settings)) {
+    //Load payment settings
+    $payment_settings = commerce_payment_method_instance_load('commerce_novalnet_cc|commerce_payment_commerce_novalnet_cc');
+    $payment_settings = empty($payment_settings['settings']) ? array() : $payment_settings['settings'];
+  }
+
+  if ( (empty($global_setting) || empty($payment_settings)) && arg(0) != 'admin')
+    return $payment_methods;
+
+  $payment_settings = (array)$payment_settings;
+  $payment_methods['commerce_novalnet_cc'] = array(
+    'title'                => t('Credit Card'),
+    'display_title'        => empty($global_setting['nn_logo']) ? t('Credit Card') : commerce_novalnet_payment_display_title(t('Credit Card'), 'commerce_novalnet_cc', $payment_settings),
+    'description'          => t('Credit Card payment via Novalnet.'),
+    'active'               => FALSE,
+    'terminal'             => (!empty($payment_settings) && (empty($payment_settings['cc3d']) || empty($payment_settings['force_cc3d']))),
+    'offsite'              => TRUE,
+    'offsite_autoredirect' => TRUE
+  );
+
+  return $payment_methods;
+}
+
+/**
+ * Payment method callback: settings_form
+ * @param array $settings
+ * @return array
+ */
+function commerce_novalnet_cc_settings_form($settings = array()) {
+  $form = array();
+  commerce_novalnet_payment_common_settings($form, $settings); // Call this function for get common settings
+  commerce_novalnet_onhold_settings($form, $settings); // On-hold settings
+  commerce_novalnet_cc_settings_form_fields($form, $settings); // Call this function for add credit card settings fields
+  return $form;
+}
+
+/**
+ * Payment method callback: submit form
+ * @param array $payment_method
+ * @param array $pane_values
+ * @param array $checkout_pane
+ * @param object $order
+ * @return array
+ */
+function commerce_novalnet_cc_submit_form($payment_method, $pane_values, $checkout_pane, $order) {
+  global $language;
+  $lang   = strtolower($language->language);
+  $payment_desc = (!empty($payment_method['settings']['cc3d']) || !empty($payment_method['settings']['force_cc3d'])) ? t('After the successful verification, you will be redirected to Novalnet secure order page to proceed with the payment') . '<br>' . t('Please don’t close the browser after successful payment, until you have been redirected back to the Shop') : t('The amount will be debited from your credit card once the order is submitted');
+  $global_setting = commerce_novalnet_validate_basic_data('commerce_novalnet_cc');
+  $server_ip      = commerce_novalnet_get_req_ip_address('SERVER_ADDR');
+  $user_ip        = commerce_novalnet_get_req_ip_address('REMOTE_ADDR');
+
+  $src            = COMMERCE_NOVALNET_CC_IFRAME_URL . '?signature=' . base64_encode( trim($global_setting['public_key']) . '&' . $user_ip . '&' . $server_ip) . '&ln=' . $lang;
+
+  $form = commerce_novalnet_cc_payment_form($order, $payment_method['settings']);
+
+  $form['nncc_normal_form'] = array(
+    '#type'           => 'markup',
+    '#markup'         => '<div id="nncc_normal_form"><div id="nncc_error" class="messages error"></div><iframe frameborder="0" onload="loadIframe()" id="nn_iframe" src="' . $src . '" width="100%"></iframe></div>',
+  );
+
+  $form['nncc_hash']    = array(
+    '#type'       => 'hidden',
+    '#attributes' => array('id' => 'nncc_hash')
+  );
+  $form['nncc_uniquid'] = array(
+    '#type'       => 'hidden',
+    '#attributes' => array('id' => 'nncc_uniquid')
+  );
+
+  $form['#attached']['js'][] = array(
+    'data' => drupal_get_path('module', 'commerce_novalnet_cc') . '/commerce_novalnet_cc.js',
+    'type' => 'file',
+  );
+  $form['#attached']['js'][] = array(
+    'data' => array('cc_style' => $payment_method['settings']['commerce_novalnet_cc_style']),
+    'type' => 'setting'
+  );
+  $form['novalnet_cc_markup'] = array(
+    '#type'   => 'markup',
+    '#weight' => '50',
+    '#markup' => $payment_desc . commerce_novalnet_test_payment_info($payment_method['settings']),
+  );
+  return $form;
+}
+
+/**
+ * Payment method callback: submit form submission.
+ * @param array $payment_method
+ * @param array $pane_form
+ * @param array $pane_values
+ * @param object $order
+ * @param array $charge
+ * @return bool / none
+ */
+function commerce_novalnet_cc_submit_form_submit($payment_method, $pane_form, $pane_values, $order, $charge) {
+  $order->data['payment_data']['from_mask']    = empty($pane_values['from_mask']) ? 0 : 1;
+  $order->data['payment_data']['nncc_hash']    = empty($pane_values['nncc_hash']) ? 0 : $pane_values['nncc_hash'];
+  $order->data['payment_data']['nncc_uniquid'] = empty($pane_values['nncc_uniquid']) ? 0 : $pane_values['nncc_uniquid'];
+  $order->data['payment_data']['payment_ref']  = empty($pane_values['reference_tid']) ? 0 : $pane_values['reference_tid'];
+  commerce_order_save($order);
+
+  if (!empty($payment_method['settings']['cc3d']) || !empty($payment_method['settings']['force_cc3d'])) return TRUE;
+
+  $data = commerce_novalnet_cc_get_request_params($order, $payment_method, $charge, FALSE);
+
+  if (!$data) {
+    drupal_set_message(t('Your credit card details are invalid'), 'error');
+    return FALSE;
+  }
+
+  $response = commerce_novalnet_drupal_request($data, COMMERCE_NOVALNET_PAYGATE_URL);  // Call this function for send request to Novalnet server
+
+  parse_str($response, $parsed_response);
+  $parsed_response = array_merge($data, $parsed_response);
+
+  if ($parsed_response['status'] == 100) { // Check the transaction is completed successfully on Novalnet server
+    $parsed_response['order_status'] = $payment_method['settings']['order_status'];
+    commerce_novalnet_complete_order($order, $parsed_response, $payment_method); // Call this function for complete the order
+  }
+  else { // If the transaction got failure
+    $form_state['rebuild'] = TRUE;
+    drupal_set_message(check_plain($parsed_response['status_desc']), 'error');
+    return FALSE;
+  }
+  return TRUE;
+}
+
+/**
+ * Payment method callback: redirect form
+ * @param array $form
+ * @param array $form_state
+ * @param object $order
+ * @param array $payment_method
+ * @return array
+ */
+function commerce_novalnet_cc_redirect_form($form, &$form_state, $order, $payment_method) {
+
+  $form = commerce_novalnet_cc_hiddenform($order, $payment_method);
+
+  $form['submit'] = array(
+      '#type'     => 'submit',
+      '#value'    => t('Confirm'),
+  );
+  return $form;
+}
+
+/**
+ * Payment method callback: redirect_form_validate
+ * @param object $order
+ * @param array $payment_method
+ * @return bool
+ */
+function commerce_novalnet_cc_redirect_form_validate($order, $payment_method) {
+  $response = $_REQUEST;
+  return commerce_novalnet_redirect_process($response, $order, $payment_method); // Call this function to do re-direction payment process
+}

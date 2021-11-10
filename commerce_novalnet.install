@@ -1,0 +1,190 @@
+<?php
+/**
+ * @file
+ * Novalnet payment method module
+ * This module is used for real time processing of
+ * Novalnet transaction of customers.
+ *
+ * @category   PHP
+ * @package    commerce_novalnet
+ * @author     Novalnet AG
+ * @copyright  Copyright by Novalnet
+ * @license    https://www.novalnet.com/payment-plugins/free/license
+ * @version    11.1.2
+ *
+ * Script : commerce_novalnet.install
+ *
+ */
+
+/**
+ * Implements hook_schema().
+ * @param none
+ * @return array
+ */
+function commerce_novalnet_schema() {
+  $schema = array();
+  $schema['commerce_novalnet_transaction_detail']  = array(
+    'description' => 'Novalnet transaction details',
+    'fields' => array(
+      'id'                 => array(
+        'type'     => 'serial',
+        'length'   => 11,
+        'not null' => TRUE
+      ),
+      'tid'                => array(
+        'type'     => 'int',
+        'size'     => 'big',
+        'unsigned' => TRUE,
+        'not null' => TRUE
+      ),
+      'vendor_details'     => array(
+        'type'     => 'blob'
+      ),
+      'status'             => array(
+        'type'     => 'int',
+        'unsigned' => TRUE,
+      ),
+      'payment_type'       => array(
+        'type'     => 'varchar',
+        'length'   => 50,
+        'not null' => TRUE
+      ),
+      'payment_key'       => array(
+        'type'      => 'int',
+        'size'      => 'tiny',
+      ),
+      'paid_amount'             => array(
+        'type'     => 'int',
+        'size'     => 'big',
+        'unsigned' => TRUE,
+      ),
+      'customer_id'        => array(
+        'type'     => 'int',
+        'default'  => NULL
+      ),
+      'order_id'           => array(
+        'type'      => 'int',
+        'unsigned'  => TRUE,
+        'not null'  => TRUE
+      ),
+      'subs_id'     => array(
+        'type'      => 'int',
+        'unsigned'  => TRUE,
+      ),
+      'affiliate'       => array(
+        'type'      => 'int',
+        'default'   => 0
+      ),
+      'changed'        => array(
+        'type'      => 'int',
+        'not null'  => TRUE
+      ),
+      'org_total'          => array(
+        'type'      => 'int',
+        'size'     => 'big',
+        'unsigned'  => TRUE,
+      ),
+      'refunded_amount'    => array(
+        'type'      => 'int',
+        'size'     => 'big',
+        'default'   => 0
+      ),
+      'booked'             => array(
+        'type'      => 'int',
+        'size'      => 'tiny',
+      ),
+      'payment_ref'        => array(
+        'type'      => 'int',
+        'size'      => 'big',
+        'unsigned'  => TRUE
+      ),
+      'one_click_shopping' => array(
+        'type'      => 'int',
+        'size'      => 'tiny',
+      ),
+      'payment_details'     => array(
+        'type'     => 'blob'
+      ),
+    ),
+    'primary key' => array(
+      'id'
+    ),
+    'indexes' => array(
+      'tid'         => array('tid'),
+      'customer_id' => array('customer_id'),
+      'order_id'    => array('order_id')
+    )
+  );
+
+  $schema['commerce_novalnet_affiliate_detail'] = array(
+    'description' => 'Novalnet merchant / affiliate account information',
+    'fields'               => array(
+        'id'   => array(
+          'type'     => 'serial',
+          'unsigned' => TRUE,
+          'not null' => TRUE
+        ),
+        'vendor_id'        => array(
+          'type'     => 'int',
+          'not null' => TRUE,
+          'default'  => 0
+        ),
+        'vendor_authcode'  => array(
+          'type'      => 'varchar',
+          'length'    => 40,
+          'not null'  => TRUE,
+          'default'   => ''
+        ),
+        'product_id'       => array(
+          'type'       => 'int',
+          'not null'   => TRUE,
+          'default'    => 0
+        ),
+        'product_url'      => array(
+          'type'        => 'varchar',
+          'length'      => 40,
+          'not null'    => TRUE,
+          'default'     => ''
+        ),
+        'activation_date'  => array(
+          'type'        => 'varchar',
+          'length'      => 32,
+          'not null'    => TRUE,
+          'default'     => ''
+        ),
+        'aff_id'           => array(
+          'type'        => 'int',
+          'not null'    => TRUE,
+          'default'     => 0
+        ),
+        'aff_authcode'     => array(
+          'type'        => 'varchar',
+          'length'      => 40,
+          'not null'    => TRUE,
+          'default'     => ''
+        ),
+        'aff_accesskey'    => array(
+          'type'        => 'varchar',
+          'length'      => 40,
+          'not null'    => TRUE,
+          'default'     => ''
+        ),
+    ),
+    'indexes'   => array(
+          'nn_aff_id' => array('aff_id'),
+    ),
+    'primary key'  => array('id')
+  );
+  return $schema;
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function commerce_novalnet_uninstall() {
+
+  // delete all variables related to Novalnet
+  db_delete('variable')
+    ->condition('name', '%novalnet%', 'LIKE')
+    ->execute();
+}

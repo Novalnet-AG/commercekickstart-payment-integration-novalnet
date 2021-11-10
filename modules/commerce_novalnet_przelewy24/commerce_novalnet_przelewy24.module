@@ -1,0 +1,142 @@
+<?php
+/**
+ * @file
+ * Novalnet payment method module
+ * This module is used for real time processing of
+ * Novalnet transaction of customers.
+ *
+ * @category   PHP
+ * @package    commerce_novalnet
+ * @author     Novalnet AG
+ * @copyright  Copyright by Novalnet
+ * @license    https://www.novalnet.com/payment-plugins/free/license
+ * @version    11.1.2
+ *
+ *  Script : commerce_novalnet_przelewy24.module
+ *
+ */
+
+/**
+ * Novalnet key for Przelewy24 Payment
+ */
+  define('COMMERCE_NOVALNET_PRZELEWY24_KEY', 78);
+  define('COMMERCE_NOVALNET_PRZELEWY24', 'PRZELEWY24');
+  define('COMMERCE_NOVALNET_PRZELEWY24_URL', 'https://payport.novalnet.de/globalbank_transfer');
+
+/**
+ * Implements hook_commerce_payment_method_info().
+ */
+function commerce_novalnet_przelewy24_commerce_payment_method_info() {
+  $payment_methods = array();
+  $global_setting   = commerce_novalnet_validate_basic_data('commerce_novalnet_przelewy24');
+  $payment_settings = rules_config_load('commerce_payment_commerce_novalnet_przelewy24');
+
+  if (!empty($global_setting) && !empty($payment_settings)) {
+    //Load payment settings
+    $payment_settings = commerce_payment_method_instance_load('commerce_novalnet_przelewy24|commerce_payment_commerce_novalnet_przelewy24');
+    $payment_settings = empty($payment_settings['settings']) ? array() : $payment_settings['settings'];
+  }
+
+  if ( (empty($global_setting) || empty($payment_settings)) && arg(0) != 'admin')
+    return $payment_methods;
+
+  $payment_methods['commerce_novalnet_przelewy24'] = array(
+    'title'                 => t('Przelewy24'),
+    'display_title'         => empty($global_setting['nn_logo']) ? t('Przelewy24') :commerce_novalnet_payment_display_title(t('Przelewy24'), 'commerce_novalnet_przelewy24'),
+    'description'           => t('Przelewy24 payment via Novalnet.'),
+    'terminal'              => FALSE,
+    'active'                => FALSE,
+    'offsite'               => TRUE,
+    'offsite_autoredirect'  => TRUE
+  );
+
+  return $payment_methods;
+}
+
+/**
+ * Implements callback for payment setting.
+ * @param array $settings
+ * @return array
+ */
+function commerce_novalnet_przelewy24_settings_form($settings = array()) {
+  $form = array();
+  commerce_novalnet_payment_common_settings($form, $settings); //  Calling common function for get common settings
+
+  $order_status   = commerce_order_status_options_list(); // Core function for get the available status
+  $form['przelewy24_pending_status'] = array(
+    '#type'          => 'select',
+    '#title'         => t('Order status for the pending payment'),
+    '#options'       => $order_status,
+    '#default_value' => isset($settings['przelewy24_pending_status']) ? $settings['przelewy24_pending_status'] : 'pending',
+  );
+  return $form;
+}
+
+/**
+ * Payment method callback: submit form.
+ * @param array $payment_method
+ * @param array $pane_values
+ * @param array $checkout_pane
+ * @param object $order
+ * @return array
+ */
+function commerce_novalnet_przelewy24_submit_form($payment_method, $pane_values, $checkout_pane, $order) {
+  $form['przelewy24_markup'] = array(
+    '#type'   => 'markup',
+    '#markup' =>  t('After the successful verification, you will be redirected to Novalnet secure order page to proceed with the payment') . '<br>' . t('Please don’t close the browser after successful payment, until you have been redirected back to the Shop') . commerce_novalnet_test_payment_info($payment_method['settings'])
+  );
+  return $form;
+}
+
+/**
+ * Payment method callback: submit form submission.
+ * @param array $payment_method
+ * @param array $pane_form
+ * @param array $pane_values
+ * @param object $order
+ * @param array $charge
+ * @return bool
+ */
+function commerce_novalnet_przelewy24_submit_form_submit($payment_method, $pane_form, $pane_values, $order, $charge) {
+  return TRUE;
+}
+
+/**
+ * Payment method callback: redirect form
+ * @param array $form
+ * @param array $form_state
+ * @param object $order
+ * @param array $payment_method
+ * @return array
+ */
+function commerce_novalnet_przelewy24_redirect_form($form, &$form_state, $order, $payment_method) {
+  $data = array();
+  $payment_method['global_setting'] = commerce_novalnet_validate_basic_data('commerce_novalnet_przelewy24');
+  commerce_novalnet_get_common_params($data, $payment_method, $order);
+
+  commerce_novalnet_redirect_params($data, $order);
+  commerce_novalnet_encode_params($data);
+  foreach($data as $key => $val){
+    $form[$key] = array(
+      '#type'             => 'hidden',
+      '#default_value'    => $val
+    );
+  }
+  $form['#action'] = COMMERCE_NOVALNET_PRZELEWY24_URL;
+  $form['submit'] = array(
+    '#type'     => 'submit',
+    '#value'    => t('Confirm'),
+  );
+  return $form;
+}
+
+/**
+ * Payment method callback: redirect form validate
+ * @param object $order
+ * @param array $payment_method
+ * @return bool
+ */
+function commerce_novalnet_przelewy24_redirect_form_validate($order, $payment_method) {
+  $response = $_REQUEST;
+  return commerce_novalnet_redirect_process($response, $order, $payment_method); // Call this function to do re-direction payment process
+}

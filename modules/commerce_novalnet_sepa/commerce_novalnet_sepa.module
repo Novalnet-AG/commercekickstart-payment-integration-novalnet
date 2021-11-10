@@ -1,0 +1,188 @@
+<?php
+/**
+ * @file
+ * Novalnet payment method module
+ * This module is used for real time processing of
+ * Novalnet transaction of customers.
+ *
+ * @category   PHP
+ * @package    commerce_novalnet
+ * @author     Novalnet AG
+ * @copyright  Copyright by Novalnet
+ * @license    https://www.novalnet.com/payment-plugins/free/license
+ * @version    11.1.2
+ *
+ *  Script : commerce_novalnet_sepa.module
+ *
+ */
+
+  module_load_include('inc', 'commerce_novalnet_sepa', 'commerce_novalnet_sepa');
+
+/**
+ * Novalnet key for Direct debit SEPA Payment
+ */
+  define('COMMERCE_NOVALNET_SEPA_KEY', 37);
+  define('COMMERCE_NOVALNET_SEPA', 'DIRECT_DEBIT_SEPA');
+  define('COMMERCE_NOVALNET_SEPA_GUARANTEE_KEY', 40);
+  define('COMMERCE_NOVALNET_SEPA_GUARANTEE_TYPE', 'GUARANTEED_DIRECT_DEBIT_SEPA');
+
+/**
+ * Implements hook_commerce_payment_method_info().
+ */
+function commerce_novalnet_sepa_commerce_payment_method_info() {
+  $payment_methods = array();
+  if (isset($_SESSION['novalnet_error_payment']['commerce_novalnet_sepa'])) {
+    if (($_SESSION['novalnet_error_payment']['commerce_novalnet_sepa']['error_time'] + 30 * 60) > time()) // For disable the payment from the front-end
+      return $payment_methods;
+    else
+      unset($_SESSION['novalnet_error_payment']['commerce_novalnet_sepa']);
+  }
+  $global_setting   = commerce_novalnet_validate_basic_data('commerce_novalnet_sepa');
+  $payment_settings = rules_config_load('commerce_payment_commerce_novalnet_sepa');
+
+  if (!empty($global_setting) && !empty($payment_settings)) {
+    //Load payment settings
+    $payment_settings = commerce_payment_method_instance_load('commerce_novalnet_sepa|commerce_payment_commerce_novalnet_sepa');
+    $payment_settings = empty($payment_settings['settings']) ? array() : $payment_settings['settings'];
+  }
+
+  if ( (empty($global_setting) || empty($payment_settings)) && arg(0) != 'admin')
+    return $payment_methods;
+
+  $payment_methods['commerce_novalnet_sepa'] = array(
+    'title'         => t('Direct Debit SEPA'),
+    'display_title' => empty($global_setting['nn_logo']) ? t('Direct Debit SEPA') :commerce_novalnet_payment_display_title(t('Direct Debit SEPA'), 'commerce_novalnet_sepa'),
+    'description'   => t('Direct Debit SEPA payment via Novalnet.'),
+    'active'        => FALSE,
+  );
+
+  return $payment_methods;
+}
+
+/**
+ * Implements callback for payment setting.
+ * @param array $settings
+ * return array $form
+ */
+function commerce_novalnet_sepa_settings_form($settings = array()) {
+  $form = array();
+  commerce_novalnet_payment_common_settings($form, $settings); //  Calling common function for get common settings
+  commerce_novalnet_onhold_settings($form, $settings); // On-hold settings
+  commerce_novalnet_sepa_settings_form_fields($form, $settings);
+  commerce_novalnet_fraud_settings($form, $settings);
+  commerce_novalnet_guarantee_payment_settings($form, $settings);
+
+  return $form;
+}
+
+/**
+ * Payment method callback: submit form.
+ * @param array $payment_method
+ * @param array $pane_values
+ * @param array $checkout_pane
+ * @param object $order
+ * @return array array
+ */
+function commerce_novalnet_sepa_submit_form($payment_method, $pane_values, $checkout_pane, $order) {
+  $settings = $payment_method['settings'];
+  if (isset($_SESSION['novalnet']['commerce_novalnet_sepa'])) {
+    commerce_novalnet_fraud_pin_reset($order->data['payment_method']);
+  }
+  $settings['global_setting'] = commerce_novalnet_validate_basic_data('commerce_novalnet_sepa');
+  $payment_type = commerce_novalnet_check_guarantee_payment($settings, $order);
+  if (!$payment_type) {
+    return commerce_novalnet_guarantee_error_form();
+  }
+  if (isset($pane_values['nn_birth_date_unformat']))
+    $pane_values['nn_birth_date'] =  $pane_values['nn_birth_date_unformat']['year'] . '-' . $pane_values['nn_birth_date_unformat']['month'] . '-' . $pane_values['nn_birth_date_unformat']['day'];
+
+  if ( isset($pane_values['nn_birth_date']) && !commerce_novalnet_check_age_limit($data, $pane_values['nn_birth_date'], $settings['guarantee_payment']['force_guarantee']))
+    return FALSE;
+
+  $reference_details = array();
+  if ($settings['shopping_type'] == 'one_click' && $reference_details = commerce_novalnet_reference_tid($order->uid, 'commerce_novalnet_sepa'))
+    $settings['shopping_type'] = 0;
+  return commerce_novalnet_sepa_payment_form($settings, $order, $reference_details, $payment_type);
+}
+
+/**
+ * Payment method callback: submit form submission.
+ * @param array $payment_method
+ * @param array $pane_form
+ * @param array $pane_values
+ * @param object $order
+ * @param array $charge
+ * @return array array
+ */
+function commerce_novalnet_sepa_submit_form_submit($payment_method, $pane_form, $pane_values, $order, $charge) {
+
+  $global_setting = commerce_novalnet_validate_basic_data('commerce_novalnet_sepa');
+
+  $payment_method['global_setting'] = $global_setting;
+
+  $data = array();
+  $payment_type = commerce_novalnet_check_guarantee_payment($payment_method['settings'], $order);
+  if (!$payment_type) {
+      drupal_set_message( t('Please try with some other payment'), 'error');
+      return FALSE;
+  }
+  commerce_novalnet_get_common_params($data, $payment_method, $order, $charge); // Call this function for getting common request param
+  if (isset($pane_values['nn_birth_date_unformat']))
+    $pane_values['nn_birth_date'] =  $pane_values['nn_birth_date_unformat']['year'] . '-' . $pane_values['nn_birth_date_unformat']['month'] . '-' . $pane_values['nn_birth_date_unformat']['day'];
+
+  if ( isset($pane_values['nn_birth_date']) && !commerce_novalnet_check_age_limit($data, $pane_values['nn_birth_date'], $payment_method['settings']['guarantee_payment']['force_guarantee']))
+    return FALSE;
+
+  commerce_novalnet_fraud_check_complete($pane_values, $data, $payment_method, $order);
+
+  if ($payment_type !='guarantee_payment')
+  commerce_novalnet_zero_amount_check($data, $payment_method['settings']['shopping_type']);
+
+  $due_date = !empty($payment_method['settings']['due_date']) ? $payment_method['settings']['due_date'] : 7;
+  $data['sepa_due_date']     = date('Y-m-d', strtotime('+ ' . $due_date . ' day'));
+
+  if (empty($pane_values['from_mask'])) {
+
+    if (!empty($payment_method['settings']['auto_refill']))
+      commerce_novalnet_session('commerce_novalnet_sepa', array('nn_sepa_hash' => $pane_values['nn_sepa_hash']));
+
+    $data['sepa_unique_id']       = $pane_values['nn_unique_id'];
+    $data['sepa_hash']            = $pane_values['nn_sepa_hash'];
+    $data['bank_account_holder']  = $pane_values['nnsepa_owner'];
+    $data['iban_bic_confirmed']     = 1;
+    if (!empty($payment_method['settings']['shopping_type'])) $data['create_payment_ref'] = 1;
+  }
+  else {
+    $data['payment_ref']   = $pane_values['reference_tid'];
+  }
+
+  if ( (isset($data['payment_ref']) && empty($data['payment_ref'])) || (!empty($data['iban_bic_confirmed']) && (empty($data['sepa_unique_id']) || empty($data['sepa_hash']) || empty($data['bank_account_holder'])))) {
+    drupal_set_message(t('Please enter valid account details!'), 'error');
+    return FALSE;
+  }
+  if (!empty($pane_values['nn_fraud_data'])) {
+    $fraud_method = $payment_method['settings']['pin_method'];
+    $fraud_array = array(
+      'callback'  => array('pin_by_callback', 'tel'),
+      'sms'  => array('pin_by_sms', 'mobile'),
+    );
+    $data[$fraud_array[$fraud_method][0]] = 1;
+    $data[$fraud_array[$fraud_method][1]] = $pane_values['nn_fraud_data'];
+  }
+  $response = commerce_novalnet_drupal_request($data, COMMERCE_NOVALNET_PAYGATE_URL);
+
+  parse_str($response, $parsed_response);
+  $parsed_response = array_merge($data, $parsed_response);
+
+  if ($parsed_response['status'] == 100) { // Check the transaction is completed successfully on Novalnet server
+    if (commerce_novalnet_fraud_check($parsed_response)) { // Call this function for check the is the order has fraud check
+      return FALSE;
+    }
+    $parsed_response['order_status'] = $payment_method['settings']['order_status'];
+    commerce_novalnet_complete_order($order, $parsed_response, $payment_method);
+  }
+  else { // If the transaction got failure
+    drupal_set_message(check_plain($parsed_response['status_desc']), 'error');
+    return FALSE;
+  }
+}

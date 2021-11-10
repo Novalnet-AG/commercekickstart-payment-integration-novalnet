@@ -1,0 +1,131 @@
+/**
+ * @file
+ * Styles for the Novalnet common.
+ */
+.field-name-commerce-transaction-details,
+.field-name-commerce-novalnet_process {
+  margin: 5px 3% 0 0;
+}
+.transaction-header {
+  background-color: #e5e5e5;
+  font-size: 14px;
+  margin: 5px 3% 0 0;
+  float: left;
+  width: 100%;
+  padding: 7px 0;
+}
+.transaction-header label {
+  font-size: 14px;
+  padding: 0px 10px;
+  font-weight: bold;
+}
+
+.nn-trans-details {
+  float: left;
+}
+.nn-trans-details tr {
+  border-bottom: 1px solid #ccc;
+}
+
+#datepicker-dob label {
+  width: 100% !important;
+}
+
+#datepicker-dob .date-padding label,
+#edit-due-date label {
+  display: none;
+}
+
+#loading-img {
+    background-color: #000;
+    display: none;
+    float: left;
+    height: 100%;
+    left: 0;
+    position: fixed;
+    top: 0;
+    width: 100%;
+    opacity: 0.25;
+    z-index:2000;
+
+}
+#loading-img img {
+  left: 50%;
+  position: absolute;
+  top: 50%;
+}
+.nn_error {
+  color: #8c2e0b;
+}
+
+/*** Update info page style**/
+.nn_update_info h3{
+  color: #0074bd;
+}
+.nn_row .nn_info_img {
+  margin:0 auto;
+  border:1px solid #ddd;
+  width:95%;
+}
+.nn_info_img img {
+  max-width:100%;
+  cursor:pointer;
+}
+.left {
+  float:left;
+}
+.right {
+  float:right;
+}
+.nn_row {
+  clear:both;
+  margin-bottom:20px;
+  width:100%;
+  float:left;
+}
+.nn_row > div{
+  width:50%;
+}
+.nnoverlay{
+  height: 100%;
+  padding-top: 85px;
+  position: fixed;
+  right: 0;
+  top: 0;
+  width: 100%;
+  z-index: 100;
+  display:none;
+}
+.nnoverlay-bg{
+  height: 100%;
+  left: 0;
+  position: fixed;
+  top: 0;
+  width: 100%;
+  background:#000;
+  opacity:0.5;
+}
+.nnoverlay-content{
+  min-width: 700px;
+  background: #FFF;
+  width: 88%;
+  margin: 0px auto;
+  position: relative;
+  padding: 15px;
+}
+.nnoverlay-content.close
+{
+  float: right;
+  background: transparent url("../images/close.png") no-repeat scroll right top;
+  min-width: 0px;
+  width: 0px;
+  min-height: 0px;
+  position: absolute;
+  top: 0px;
+  right: -25px;
+  cursor:pointer;
+}
+.nnoverlay-content img{
+  width:100%;
+  box-shadow: 0 0 10px #ddd;
+}

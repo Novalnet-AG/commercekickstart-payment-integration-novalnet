@@ -1,0 +1,15 @@
+/**
+ * @file
+ * Basic styling for the Commerce Payment module.
+ */
+
+/**
+ * Add styles to SEPA form elements.
+ */
+#nnsepa_iban_div,
+#nnsepa_bic_div {
+  display: none;
+}
+#nnsepa_normal_form label {
+  width: 50% !important;
+}

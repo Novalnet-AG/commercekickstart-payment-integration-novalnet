@@ -1,0 +1,130 @@
+<?php
+/**
+ * @file
+ * Novalnet payment method module
+ * This module is used for real time processing of
+ * Novalnet transaction of customers.
+ *
+ * @category   PHP
+ * @package    commerce_novalnet
+ * @author     Novalnet AG
+ * @copyright  Copyright by Novalnet
+ * @license    https://www.novalnet.com/payment-plugins/free/license
+ * @version    11.1.2
+ * 
+ *  Script : commerce_novalnet.module
+ *
+ */
+
+/**
+ * Include commerce_novalnet.inc file
+ */
+module_load_include('inc', 'commerce_novalnet', 'includes/commerce_novalnet');
+
+/**
+ * Implements hook_menu().
+ */
+function commerce_novalnet_menu() {
+  // Store settings > Novalnet administration
+  $items['admin/commerce/config/novalnet-settings'] = array(
+    'title'             => commerce_novalnet_title_callback('Novalnet administration'),
+    'description'       => commerce_novalnet_title_callback('Novalnet administration settings.'),
+    'page callback'     => 'system_admin_menu_block_page',
+    'file path'         => drupal_get_path('module', 'system'),
+    'file'              => 'system.admin.inc',
+    'access arguments'  => array('access administration pages'),
+    'weight'            => 5,
+    'options'           => array(
+      'toolbar_expanded' => TRUE,
+      'toolbar_break'    => TRUE,
+    ),
+  );
+  // Store settings > Novalnet administration > Global configuration
+  $items['admin/commerce/config/novalnet-settings/global-config'] = array(
+    'title'              => commerce_novalnet_title_callback('Novalnet Global Configuration'),
+    'description'        => commerce_novalnet_title_callback('Novalnet Global Configuration'),
+    'page callback'      => 'drupal_get_form',
+    'page arguments'     => array('commerce_novalnet_global_config_form'),
+    'access arguments'   => array('access administration pages'),
+    'file'               => 'includes/commerce_novalnet.form.inc',
+  );
+
+  // Menu / url for get the merchant details from Novalnet
+  $items['admin/get-nn-data'] = array(
+    'title'              => 'Get merchant details',
+    'access arguments'   => array('access administration pages'),
+    'page callback'      => 'commerce_novalnet_get_merchant_details',
+    'type'               => MENU_CALLBACK
+  );
+
+  // Menu / url for call-back process
+  $items['commerce_novalnet_callback'] = array(
+    'title'              => '',
+    'access arguments'   => array('access content'),
+    'page callback'      => 'commerce_novalnet_callback',
+    'file'               => 'includes/commerce_novalnet.callback.inc',
+    'access arguments' => array('access content'),
+    'type'               => MENU_CALLBACK
+  );
+
+  return $items;
+}
+
+/**
+ * Implements title callback.
+ * @param $arg string
+ * @return string
+ */
+function commerce_novalnet_title_callback($arg) {
+    return t($arg);
+}
+
+/**
+ * Implements hook_init().
+ */
+function commerce_novalnet_init() {
+
+    if (!empty($_POST['tid']) && empty($_SESSION['novalnet']) && empty($_POST['sess_lost'])
+        && !preg_match("/commerce_novalnet_callback/i", current_path())) {
+        $_POST['sess_lost'] = 1;
+        $return_url = url(current_path(), array('absolute' => TRUE));
+        $params = drupal_http_build_query($_POST);
+        $REDIRECT_URL = str_replace(' ', '', $return_url.'?'.$params );
+        drupal_goto($REDIRECT_URL);
+    }
+
+    if (isset($_REQUEST['nn_aff_id']) && is_numeric($_REQUEST['nn_aff_id'])) {
+        $_SESSION['nn_aff_id'] = trim($_REQUEST['nn_aff_id']);
+    }
+}
+
+/**
+ * Implements hook_cron().
+ */
+function commerce_novalnet_cron() {
+  $interval = variable_get('commerce_novalnet_interval', 60);
+    if (time() >= variable_get('commerce_novalnet_next_execution', 0)) {
+      watchdog('commerce_novalnet', 'commerce_novalnet ran');
+      commerce_novalnet_cancel_recurring_on_cron();
+      variable_set('commerce_novalnet_next_execution', time() + $interval);
+    }
+}
+
+
+/**
+ * Implements hook_theme()
+ */
+function commerce_novalnet_theme() {
+    return array(
+        'update_info' => array(
+            'render element' => 'elements',
+            'template' => 'templates/update_info',
+        ),
+    );
+}
+
+function commerce_novalnet_help($path, $arg) {
+    if ($path == "admin/help#commerce_novalnet" || $path == "admin/help#commerce_novalnet") {
+        return theme('update_info');
+    }
+}

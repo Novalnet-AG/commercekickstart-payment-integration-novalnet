@@ -1,0 +1,174 @@
+<?php
+/**
+ * @file
+ * Novalnet payment method module
+ * This module is used for real time processing of
+ * Novalnet transaction of customers.
+ *
+ * @category   PHP
+ * @package    commerce_novalnet
+ * @author     Novalnet AG
+ * @copyright  Copyright by Novalnet
+ * @license    https://www.novalnet.com/payment-plugins/free/license
+ * @version    11.1.2
+ *
+ *  Script : commerce_novalnet_invoice.module
+ *
+ */
+
+/**
+ * Novalnet key for Invoice Payment
+ */
+  define('COMMERCE_NOVALNET_INVOICE_KEY', 27);
+  define('COMMERCE_NOVALNET_INVOICE', 'INVOICE');
+  define('COMMERCE_NOVALNET_INVOICE_GUARANTEE_KEY', 41);
+  define('COMMERCE_NOVALNET_INVOICE_GUARANTEE_TYPE', 'GUARANTEED_INVOICE');
+/**
+ * Implements hook_commerce_payment_method_info().
+ */
+function commerce_novalnet_invoice_commerce_payment_method_info() {
+  $payment_methods = array();
+  if (isset($_SESSION['novalnet_error_payment']['commerce_novalnet_invoice']) && arg(0) != 'admin') {
+    if (($_SESSION['novalnet_error_payment']['commerce_novalnet_invoice']['error_time'] + 30 * 60) > time()) // For disable the payment from the front-end
+      return $payment_methods;
+    else
+      unset($_SESSION['novalnet_error_payment']['commerce_novalnet_invoice']);
+  }
+  $global_setting   = commerce_novalnet_validate_basic_data('commerce_novalnet_invoice');
+  $payment_settings = rules_config_load('commerce_payment_commerce_novalnet_invoice');
+  if (!empty($global_setting) && !empty($payment_settings)) {
+    //Load payment settings
+    $payment_settings = commerce_payment_method_instance_load('commerce_novalnet_invoice|commerce_payment_commerce_novalnet_invoice');
+    $payment_settings = empty($payment_settings['settings']) ? array() : $payment_settings['settings'];
+  }
+  if ( (empty($global_setting) || empty($payment_settings)) && arg(0) != 'admin')
+    return $payment_methods;
+
+  $payment_methods['commerce_novalnet_invoice'] = array(
+    'title'         => t('Invoice'),
+    'display_title' => empty($global_setting['nn_logo']) ? t('Invoice') :commerce_novalnet_payment_display_title(t('Invoice'), 'commerce_novalnet_invoice'),
+    'description'   => t('Invoice payment via Novalnet.'),
+    'active'        => FALSE,
+  );
+
+  return $payment_methods;
+}
+
+/**
+ * Implements callback for payment setting.
+ * @param array $settings
+ * @return array
+ */
+function commerce_novalnet_invoice_settings_form($settings = array()) {
+  $form = array();
+  commerce_novalnet_payment_common_settings($form, $settings); //  Calling common function for get common settings
+  commerce_novalnet_onhold_settings($form, $settings); // On-hold settings. 
+  commerce_novalnet_fraud_settings($form, $settings);
+
+  $form['due_date']        = array(
+    '#type'             => 'textfield',
+    '#title'            => t('Payment due date (in days)'),
+    '#description'      => t('Enter the number of days to transfer the payment amount to Novalnet (must be greater than 7 days). In case if the field is empty, 14 days will be set as due date by default.'),
+    '#default_value'    => isset($settings['due_date']) ? $settings['due_date'] : '',
+    '#element_validate' => array('commerce_novalnet_element_validate_due_date'),
+  );
+  commerce_novalnet_invoice_prepayment_additional_settings($form, $settings); // Call this function for adding additional settings fields
+  commerce_novalnet_guarantee_payment_settings($form, $settings); // Call this function for add settings field for guarantee payment
+
+  return $form;
+}
+
+/**
+ * Payment method callback: submit form.
+ * @param array $payment_method
+ * @param array $pane_values
+ * @param array $checkout_pane
+ * @param object $order
+ * @return array
+ */
+function commerce_novalnet_invoice_submit_form($payment_method, $pane_values, $checkout_pane, $order) {
+  $settings = $payment_method['settings'];
+  if (isset($_SESSION['novalnet']['commerce_novalnet_invoice'])) {
+    commerce_novalnet_fraud_pin_reset($order->data['payment_method']);
+  }
+
+  $payment_type = commerce_novalnet_check_guarantee_payment($settings, $order);
+  if (!$payment_type) {
+    return commerce_novalnet_guarantee_error_form();
+  }
+
+  if ( $payment_type == 'guarantee_payment') // Chack for guarantee payment
+    commerce_novalnet_dob_field($form, $settings, $order); // Call this function for display date of birth field
+  else
+    commerce_novalnet_fraud_prevention_form($form, $settings, $order, 'commerce_novalnet_invoice'); // Call this function for display fraud prevention input files
+
+  $form['novalnet_invoice_markup'] = array(
+    '#type'   => 'markup',
+    '#weight' => '50',
+    '#markup' => t("Once you've submitted the order, you will receive an e-mail with account details to make payment") . commerce_novalnet_test_payment_info($settings),
+  );
+  return $form;
+}
+
+/**
+ * Payment method callback: submit form submission.
+ * @param array $payment_method
+ * @param array $pane_form
+ * @param array $pane_values
+ * @param object $order
+ * @param array $charge
+ * @return bool
+ */
+function commerce_novalnet_invoice_submit_form_submit($payment_method, $pane_form, $pane_values, $order, $charge) {
+  $global_setting = commerce_novalnet_validate_basic_data('commerce_novalnet_invoice');
+  $payment_method['global_setting'] = $global_setting;
+
+  $data = array();
+  $payment_type = commerce_novalnet_check_guarantee_payment($payment_method['settings'], $order);
+  if (!$payment_type) {
+      drupal_set_message( t('Please try with some other payment'), 'error');
+      return FALSE;
+  }
+  commerce_novalnet_get_common_params($data, $payment_method, $order, $charge); //Call this function for getting common params
+
+  if (isset($pane_values['nn_birth_date_unformat']))
+    $pane_values['nn_birth_date'] =  $pane_values['nn_birth_date_unformat']['year'] . '-' . $pane_values['nn_birth_date_unformat']['month'] . '-' . $pane_values['nn_birth_date_unformat']['day'];
+
+  if ( isset($pane_values['nn_birth_date']) && !commerce_novalnet_check_age_limit($data, $pane_values['nn_birth_date'], $payment_method['settings']['guarantee_payment']['force_guarantee']))
+    return FALSE;
+
+  $data['invoice_type']   = 'INVOICE';
+  $data['invoice_ref']    = "BNR-" . $data['product'] . "-" . $data['order_no'];
+
+  if (!empty($payment_method['settings']['due_date'])) {
+    $data['due_date']     = date('Y-m-d', strtotime('+ ' . $payment_method['settings']['due_date'] . ' day'));
+  }
+
+  commerce_novalnet_fraud_check_complete($pane_values, $data, $payment_method, $order); // Call this function for perform checkout complete with fraud module
+
+  if (!empty($pane_values['nn_fraud_data'])) {
+    $fraud_method = $payment_method['settings']['pin_method'];
+    $fraud_array = array(
+      'callback'  => array('pin_by_callback', 'tel'),
+      'sms'  => array('pin_by_sms', 'mobile'),
+    );
+    $data[$fraud_array[$fraud_method][0]] = 1;
+    $data[$fraud_array[$fraud_method][1]] = $pane_values['nn_fraud_data'];
+  }
+  $response = commerce_novalnet_drupal_request($data, COMMERCE_NOVALNET_PAYGATE_URL);
+  parse_str($response, $parsed_response);
+  $parsed_response = array_merge($data, $parsed_response);
+
+  if ($parsed_response['status'] == 100) { // Check the transaction is completed successfully on Novalnet server
+    if (commerce_novalnet_fraud_check($parsed_response)) { // Call this function for check fraud module
+      return FALSE;
+    }
+    $parsed_response['order_status'] = $payment_method['settings']['order_status'];
+
+    commerce_novalnet_complete_order($order, $parsed_response, $payment_method);
+  }
+  else { // If the transaction got failure
+    drupal_set_message(check_plain($parsed_response['status_desc']), 'error');
+    return FALSE;
+  }
+}

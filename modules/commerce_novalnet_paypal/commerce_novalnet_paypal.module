@@ -1,0 +1,212 @@
+<?php
+/**
+ * @file
+ * Novalnet payment method module
+ * This module is used for real time processing of
+ * Novalnet transaction of customers.
+ *
+ * @category   PHP
+ * @package    commerce_novalnet
+ * @author     Novalnet AG
+ * @copyright  Copyright by Novalnet
+ * @license    https://www.novalnet.com/payment-plugins/free/license
+ * @version    11.1.2
+ *
+ *  Script : commerce_novalnet_paypal.module
+ *
+ */
+
+/**
+ * Novalnet key for Paypal Payment
+ */
+  define('COMMERCE_NOVALNET_PAYPAL_KEY', 34);
+  define('COMMERCE_NOVALNET_PAYPAL', 'PAYPAL');
+  define('COMMERCE_NOVALNET_PAYPAL_URL', 'https://payport.novalnet.de/paypal_payport');
+
+/**
+ * Implements hook_commerce_payment_method_info().
+ */
+function commerce_novalnet_paypal_commerce_payment_method_info() {
+  $payment_methods = array();
+  $global_setting   = commerce_novalnet_validate_basic_data('commerce_novalnet_paypal');
+  $payment_settings = rules_config_load('commerce_payment_commerce_novalnet_paypal');
+
+  if (!empty($global_setting) && !empty($payment_settings)) {
+    //Load payment settings
+    $payment_settings = commerce_payment_method_instance_load('commerce_novalnet_paypal|commerce_payment_commerce_novalnet_paypal');
+    $payment_settings = empty($payment_settings['settings']) ? array() : $payment_settings['settings'];
+  }
+
+  if ( (empty($global_setting) || empty($payment_settings)) && arg(0) != 'admin')
+    return $payment_methods;
+
+  $payment_methods['commerce_novalnet_paypal'] = array(
+    'title'                 => t('PayPal'),
+    'display_title'         => empty($global_setting['nn_logo']) ? t('PayPal') :commerce_novalnet_payment_display_title(t('PayPal'), 'commerce_novalnet_paypal'),
+    'description'           => t('PayPal payment via Novalnet.'),
+    'terminal'              => FALSE,
+    'active'                => FALSE,
+    'offsite'               => TRUE,
+    'offsite_autoredirect'  => TRUE
+  );
+
+  return $payment_methods;
+}
+
+/**
+ * Implements callback for payment setting.
+ * @param array $settings
+ * @return array
+ */
+function commerce_novalnet_paypal_settings_form($settings = array()) {
+  $form = array();
+  commerce_novalnet_payment_common_settings($form, $settings); //  Calling common function for get common settings
+  commerce_novalnet_paypal_onhold_settings($form, $settings); // On-hold settings
+
+  $order_status   = commerce_order_status_options_list(); // Core function for get the available status
+
+  $form['shopping_type'] = array(
+    '#type'          => 'select',
+    '#title'         => t('Shopping type'),
+    '#options'       => array(0 => t('None'), 'one_click' => t('One click shopping'), 'zero_amount' => t('Zero amount booking')),
+    '#attributes'    => array('id' => 'shopping_type'),
+    '#default_value' => isset($settings['shopping_type']) ? $settings['shopping_type'] : 0
+  );
+  $form['paypal_notify'] = array(
+    '#type'          => 'fieldset',
+    '#description'    => t('In order to use this option you must have billing agreement option enabled in your PayPal account. Please contact your account manager at PayPal.'),
+    '#attributes'    => array('class' => array('warning'), 'style' => array('padding: 1.5em 0 0 0;')),
+    '#states'        => array(
+      'invisible' => array('select[id=shopping_type]' => array(array('value' => 0))),
+    ),
+  );
+
+  $form['paypal_pending_status'] = array(
+    '#type'          => 'select',
+    '#title'         => t('Order status for the pending payment'),
+    '#options'       => $order_status,
+    '#default_value' => isset($settings['paypal_pending_status']) ? $settings['paypal_pending_status'] : 'pending',
+  );
+  return $form;
+}
+
+/**
+ * Payment method callback: submit form.
+ * @param array $payment_method
+ * @param array $pane_values
+ * @param array $checkout_pane
+ * @param object $order
+ * @return array
+ */
+function commerce_novalnet_paypal_submit_form($payment_method, $pane_values, $checkout_pane, $order) {
+  if ($payment_method['settings']['shopping_type'] == 'one_click' && $reference_details = commerce_novalnet_reference_tid($order->uid, 'commerce_novalnet_paypal')) {
+    $payment_details = unserialize($reference_details['payment_details']);
+    $form['nn_paypal_mask_tid'] = array(
+      '#type'           => 'textfield',
+      '#title'          => t('Novalnet transaction ID'),
+      '#value'          => $reference_details['tid'],
+      '#attributes'     => array('disabled' => 'true'),
+      '#prefix'         => '<div class="form-item"><strong><a href="#" id="change_mask_paypal">' . t('Proceed with new PayPal account details') . '</a></strong>' . '</div><div id="paypal_mask_form">',
+    );
+    if (!empty($payment_details['paypal_transaction_id']))
+    $form['nn_paypal_mask_pid'] = array(
+      '#type'           => 'textfield',
+      '#title'          => t('PayPal transaction ID'),
+      '#value'          => $payment_details['paypal_transaction_id'],
+      '#attributes'     => array('disabled' => 'true'),
+    );
+    $form['from_paypal_mask'] = array(
+      '#type'           => 'hidden',
+      '#default_value'  => 1,
+      '#attributes'     => array('id' => 'from_paypal_mask'),
+    );
+    $form['nn_paypal_mask_markup'] = array(
+      '#type'   => 'markup',
+      '#markup' =>  t('Once the order is submitted, the payment will be processed as a reference transaction at Novalnet') . commerce_novalnet_test_payment_info($payment_method['settings']) . '</div>',
+    );
+    $form['#attached']['js'][] = array(
+      'data' => drupal_get_path('module', 'commerce_novalnet_paypal') . '/commerce_novalnet_paypal.js',
+      'type' => 'file',
+    );
+  }
+
+  $form['nn_paypal_markup'] = array(
+    '#type'   => 'markup',
+    '#markup' =>  '<div id="paypal_normal_form">' . t('After the successful verification, you will be redirected to Novalnet secure order page to proceed with the payment') . '<br>' . t('Please don’t close the browser after successful payment, until you have been redirected back to the Shop') . commerce_novalnet_test_payment_info($payment_method['settings']) . '</div>',
+
+  );
+  return $form;
+}
+
+/**
+ * Payment method callback: submit form submission.
+ * @param array $payment_method
+ * @param array $pane_form
+ * @param array $pane_values
+ * @param object $order
+ * @param array $charge
+ * @return bool
+ */
+function commerce_novalnet_paypal_submit_form_submit($payment_method, $pane_form, $pane_values, $order, $charge) {
+  if (!empty($pane_values['from_paypal_mask'])) {
+    $data = array();
+    $payment_method['global_setting'] = commerce_novalnet_validate_basic_data('commerce_novalnet_paypal');
+    commerce_novalnet_get_common_params($data, $payment_method, $order);
+    $data['payment_ref'] = $pane_values['nn_paypal_mask_tid'];
+
+    $response = commerce_novalnet_drupal_request($data, COMMERCE_NOVALNET_PAYGATE_URL);
+    parse_str($response, $parsed_response);
+    $parsed_response = array_merge($data, $parsed_response);
+
+    if (in_array($parsed_response['status'], array(90, 100))) { // Check the transaction is completed successfully on Novalnet server
+      $parsed_response['order_status'] = $payment_method['settings']['order_status'];
+      commerce_novalnet_complete_order($order, $parsed_response, $payment_method);
+    }
+    else { // If the transaction got failure
+      drupal_set_message(check_plain($parsed_response['status_desc']), 'error');
+      return FALSE;
+    }
+  }
+  return TRUE;
+}
+
+/**
+ * Payment method callback: redirect form
+ * @param array $form
+ * @param array $form_state
+ * @param object $order
+ * @param array $payment_method
+ * @return array
+ */
+function commerce_novalnet_paypal_redirect_form($form, &$form_state, $order, $payment_method) {
+  $data = array();
+  $payment_method['global_setting'] = commerce_novalnet_validate_basic_data('commerce_novalnet_paypal');
+  commerce_novalnet_get_common_params($data, $payment_method, $order);
+  commerce_novalnet_zero_amount_check($data, $payment_method['settings']['shopping_type']);
+  commerce_novalnet_redirect_params($data, $order);
+  commerce_novalnet_encode_params($data);
+  if (!empty($payment_method['settings']['shopping_type'])) $data['create_payment_ref'] = 1;
+  foreach ($data as $key => $val) {
+    $form[$key] = array(
+      '#type'             => 'hidden',
+      '#default_value'    => $val
+    );
+  }
+  $form['#action'] = COMMERCE_NOVALNET_PAYPAL_URL;
+  $form['submit'] = array(
+    '#type'     => 'submit',
+    '#value'    => t('Confirm'),
+  );
+  return $form;
+}
+
+/**
+ * Payment method callback: redirect form validate
+ * @param object $order
+ * @param array $payment_method
+ * @return bool
+ */
+function commerce_novalnet_paypal_redirect_form_validate($order, $payment_method) {
+  $response = $_REQUEST;
+  return commerce_novalnet_redirect_process($response, $order, $payment_method); // Call this function to do re-direction payment process
+}
