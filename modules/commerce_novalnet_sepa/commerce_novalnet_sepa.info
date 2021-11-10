@@ -1,0 +1,8 @@
+name = Direct Debit SEPA
+description = Direct Debit SEPA payment method.
+package = Commerce - Novalnet
+dependencies[] = commerce_novalnet
+scripts[] = commerce_novalnet_sepa.js
+
+core = 7.x
+version = "7.x-11.1.0"
