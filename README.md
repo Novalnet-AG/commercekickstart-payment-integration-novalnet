@@ -58,18 +58,18 @@ Follow these steps to install the Commerce Kickstart Payment Integration by Nova
 See our License Agreement at: <a href= "https://www.novalnet.de/payment-plugins/kostenlos/lizenz"> https://www.novalnet.de/payment-plugins/kostenlos/lizenz </a>
 
 ## Documentation & Support
-
 For more information about the Commerce Kickstart Payment Integration by Novalnet, please get in touch with us: <a href="mailto:sales@novalnet.de"> sales@novalnet.de or +49 89 9230683-20
 
 Novalnet AG<br>
 Zahlungsinstitut (ZAG)<br>
-Feringastr. 4<br>
-85774 Unterföhring<br>
+Gutenbergstraße 7<br>
+D-85748 Garching<br>
 Deutschland<br>
-Web: <a href= "https://www.novalnet.de/"> www.novalnet.de </a>
+E-mail: sales@novalnet.de<br>
+Tel: +49 89 9230683-20<br>
+Web: www.novalnet.de
 
 ## Novalnet AG 
-
 Novalnet AG is a leading <a href="https://www.novalnet.de/zahlungsinstitut"> financial services institution </a> offering payment gateways for processing online payments. Operating in the market as a full payment service provider Novalnet AG provides online merchants user-friendly payment integration with all major shop systems and self-programmed sites.
 
 Our SaaS engine is <a href="https://www.novalnet.de/pci-dss-zertifizierung"> PCI DSS certified </a> and designed to enable real-time risk management, secured payments via escrow accounts, efficient receivables management, dynamic member and subscription management, customized payment solutions for various business models (e.g. marketplaces, affiliate programs etc.) etc.
